@@ -21,14 +21,12 @@ import pytest
 from expense_agent.agent import (
     ExpenseReport,
     RawEvent,
-    RiskAssessment,
     auto_approve,
     parse_expense,
     record_outcome,
     route_expense,
 )
 from expense_agent.config import config
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -82,7 +80,7 @@ class TestParseExpense:
 
     def test_invalid_json_raises(self):
         raw = RawEvent(data="not-json-and-not-base64")
-        with pytest.raises(Exception):
+        with pytest.raises(json.JSONDecodeError):
             parse_expense(raw)
 
 
@@ -91,12 +89,16 @@ class TestParseExpense:
 
 class TestRouteExpense:
     def test_below_threshold_routes_auto_approve(self):
-        expense = ExpenseReport(**{**SAMPLE_EXPENSE, "amount": config.auto_approve_threshold - 0.01})
+        expense = ExpenseReport(
+            **{**SAMPLE_EXPENSE, "amount": config.auto_approve_threshold - 0.01}
+        )
         event = route_expense(expense)
         assert event.actions.route == "auto_approve"
 
     def test_at_threshold_routes_llm_review(self):
-        expense = ExpenseReport(**{**SAMPLE_EXPENSE, "amount": config.auto_approve_threshold})
+        expense = ExpenseReport(
+            **{**SAMPLE_EXPENSE, "amount": config.auto_approve_threshold}
+        )
         event = route_expense(expense)
         assert event.actions.route == "llm_review"
 
@@ -172,14 +174,18 @@ class TestRecordOutcome:
         assert result["method"] == "auto"
 
     # human approve variants
-    @pytest.mark.parametrize("verdict", ["approve", "approved", "yes", "Approve", "APPROVE"])
+    @pytest.mark.parametrize(
+        "verdict", ["approve", "approved", "yes", "Approve", "APPROVE"]
+    )
     def test_human_approve_variants(self, verdict):
         result = self._final_result(verdict)
         assert result["decision"] == "approved"
         assert result["method"] == "human"
 
     # human reject variants
-    @pytest.mark.parametrize("verdict", ["reject", "rejected", "no", "Reject", "REJECT", "nope"])
+    @pytest.mark.parametrize(
+        "verdict", ["reject", "rejected", "no", "Reject", "REJECT", "nope"]
+    )
     def test_human_reject_variants(self, verdict):
         result = self._final_result(verdict)
         assert result["decision"] == "rejected"

@@ -79,7 +79,9 @@ def auto_approve(node_input: ExpenseReport):
         f" · {node_input.category}"
         f" (under ${config.auto_approve_threshold:.0f} threshold)"
     )
-    yield Event(content=types.Content(role="model", parts=[types.Part.from_text(text=msg)]))
+    yield Event(
+        content=types.Content(role="model", parts=[types.Part.from_text(text=msg)])
+    )
     yield Event(output="auto_approved")
 
 
@@ -109,10 +111,14 @@ risk_reviewer = LlmAgent(
 # their text becomes this node's output — the function body does not rerun.
 
 
-async def request_human_approval(ctx: Context, node_input: RiskAssessment, expense: dict):
+async def request_human_approval(
+    ctx: Context, node_input: RiskAssessment, expense: dict
+):
     """Surface the risk assessment and pause until a human decides."""
     exp = ExpenseReport(**expense)
-    bullets = "\n".join(f"  • {f}" for f in node_input.risk_factors) or "  (none identified)"
+    bullets = (
+        "\n".join(f"  • {f}" for f in node_input.risk_factors) or "  (none identified)"
+    )
     message = (
         f"══════════ EXPENSE APPROVAL REQUIRED ══════════\n"
         f"Submitter   : {exp.submitter}\n"
@@ -162,7 +168,9 @@ def record_outcome(ctx: Context, node_input: str, expense: dict):
         f"[{method.upper()}] {verdict.upper()}"
         f" · ${exp.amount:.2f} by {exp.submitter} ({exp.category})"
     )
-    yield Event(content=types.Content(role="model", parts=[types.Part.from_text(text=summary)]))
+    yield Event(
+        content=types.Content(role="model", parts=[types.Part.from_text(text=summary)])
+    )
     yield Event(output=json.dumps(result))
 
 
@@ -188,7 +196,11 @@ root_agent = Workflow(
         Edge(from_node=START, to_node=parse_expense_node),
         Edge(from_node=parse_expense_node, to_node=route_expense_node),
         # ② fast path — no LLM, no human
-        Edge(from_node=route_expense_node, to_node=auto_approve_node, route="auto_approve"),
+        Edge(
+            from_node=route_expense_node,
+            to_node=auto_approve_node,
+            route="auto_approve",
+        ),
         # ③ slow path — LLM review, then human gate
         Edge(from_node=route_expense_node, to_node=risk_reviewer, route="llm_review"),
         Edge(from_node=risk_reviewer, to_node=request_human_approval_node),
