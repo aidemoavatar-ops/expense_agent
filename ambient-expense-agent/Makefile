@@ -5,7 +5,7 @@
 # On Windows run from Git Bash (where 'nohup' and '&' work as expected).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install playground lint test test-expense
+.PHONY: install playground stop lint test test-expense
 
 ## Install project dependencies (wraps `uv sync`)
 install:
@@ -19,6 +19,10 @@ playground:
 	nohup uv run adk web . --host 127.0.0.1 --port 8080 --reload_agents > playground.log 2>&1 &
 	@echo "Server starting. Follow logs with:  tail -f playground.log"
 	@echo "Open http://127.0.0.1:8080 once you see 'Application startup complete'."
+
+## Stop the background playground server
+stop:
+	@pkill -f "adk web" && echo "Playground stopped." || echo "No playground process found."
 
 ## Run ruff, ty, and codespell quality checks
 lint:
