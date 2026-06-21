@@ -12,6 +12,7 @@ from google.genai import types
 from pydantic import BaseModel
 
 from .config import config
+from .security import detect_prompt_injection, scrub_pii
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -51,7 +52,41 @@ def parse_expense(node_input: RawEvent) -> ExpenseReport:
     return ExpenseReport(**json.loads(decoded))
 
 
-# ── Node 2 · route_expense ───────────────────────────────────────────────────
+# ── Node 2 · security_checkpoint ─────────────────────────────────────────────
+#
+# Runs before any LLM or human sees the expense.
+# • Scrubs SSNs and credit-card numbers from the description.
+# • Detects prompt-injection attempts in the (already-scrubbed) description.
+#   – Clean → route "clean" → normal flow
+#   – Injection → route "injection_detected" → human-only review, LLM bypassed
+
+
+def security_checkpoint(node_input: ExpenseReport) -> Event:
+    scrubbed_desc, scrubbed_fields = scrub_pii(node_input.description)
+    clean = node_input.model_copy(update={"description": scrubbed_desc})
+
+    if detect_prompt_injection(scrubbed_desc):
+        return Event(
+            output=clean,
+            route="injection_detected",
+            state={
+                "expense": clean.model_dump(),
+                "scrubbed_fields": scrubbed_fields,
+                "security_event": True,
+            },
+        )
+
+    return Event(
+        output=clean,
+        route="clean",
+        state={
+            "expense": clean.model_dump(),
+            "scrubbed_fields": scrubbed_fields,
+        },
+    )
+
+
+# ── Node 3 · route_expense ───────────────────────────────────────────────────
 
 
 def route_expense(node_input: ExpenseReport) -> Event:
@@ -68,7 +103,7 @@ def route_expense(node_input: ExpenseReport) -> Event:
     )
 
 
-# ── Node 3a · auto_approve ───────────────────────────────────────────────────
+# ── Node 4a · auto_approve ───────────────────────────────────────────────────
 
 
 def auto_approve(node_input: ExpenseReport):
@@ -85,7 +120,7 @@ def auto_approve(node_input: ExpenseReport):
     yield Event(output="auto_approved")
 
 
-# ── Node 3b · risk_reviewer (LLM) ────────────────────────────────────────────
+# ── Node 4b · risk_reviewer (LLM) ────────────────────────────────────────────
 
 
 risk_reviewer = LlmAgent(
@@ -104,7 +139,38 @@ risk_reviewer = LlmAgent(
 )
 
 
-# ── Node 4 · request_human_approval (HITL) ───────────────────────────────────
+# ── Node 5a · request_security_review (HITL — injection path) ────────────────
+#
+# The LLM is never consulted; a human decides directly on flagged expenses.
+
+
+async def request_security_review(ctx: Context, node_input: ExpenseReport):
+    """Pause and surface a security-flagged expense for human-only review."""
+    scrubbed_fields = ctx.state.get("scrubbed_fields", [])
+    redaction_note = (
+        f"\nNote: the following PII categories were redacted from the description"
+        f" before this alert: {', '.join(scrubbed_fields)}."
+        if scrubbed_fields
+        else ""
+    )
+    message = (
+        f"SECURITY ALERT — Prompt Injection Detected\n"
+        f"══════════ SECURITY REVIEW REQUIRED ══════════\n"
+        f"Submitter   : {node_input.submitter}\n"
+        f"Amount      : ${node_input.amount:.2f}\n"
+        f"Category    : {node_input.category}\n"
+        f"Date        : {node_input.date}\n"
+        f"Description : {node_input.description}\n"
+        f"{redaction_note}\n"
+        f"WARNING: This description contained patterns consistent with a\n"
+        f"prompt-injection attack attempting to bypass approval rules.\n"
+        f"The LLM reviewer was NOT consulted.\n\n"
+        f"Reply 'approve' or 'reject':"
+    )
+    yield RequestInput(interrupt_id="security_decision", message=message)
+
+
+# ── Node 5b · request_human_approval (HITL — normal path) ────────────────────
 #
 # rerun_on_resume defaults to False for FunctionNode:
 # the workflow pauses at the RequestInput, and when the human replies
@@ -155,6 +221,9 @@ def record_outcome(ctx: Context, node_input: str, expense: dict):
     else:
         verdict, method = "rejected", "human"
 
+    scrubbed_fields: list = ctx.state.get("scrubbed_fields", [])
+    security_event: bool = ctx.state.get("security_event", False)
+
     result = {
         "decision": verdict,
         "method": method,
@@ -163,11 +232,15 @@ def record_outcome(ctx: Context, node_input: str, expense: dict):
         "category": exp.category,
         "date": exp.date,
         "description": exp.description,
+        "scrubbed_fields": scrubbed_fields,
+        "security_event": security_event,
     }
     summary = (
         f"[{method.upper()}] {verdict.upper()}"
         f" · ${exp.amount:.2f} by {exp.submitter} ({exp.category})"
     )
+    if security_event:
+        summary = f"[SECURITY] {summary}"
     yield Event(
         content=types.Content(role="model", parts=[types.Part.from_text(text=summary)])
     )
@@ -177,12 +250,25 @@ def record_outcome(ctx: Context, node_input: str, expense: dict):
 # ── Wrap plain functions as FunctionNodes ─────────────────────────────────────
 
 parse_expense_node = FunctionNode(func=parse_expense)
+security_checkpoint_node = FunctionNode(func=security_checkpoint)
 route_expense_node = FunctionNode(func=route_expense)
 auto_approve_node = FunctionNode(func=auto_approve)
+request_security_review_node = FunctionNode(func=request_security_review)
 request_human_approval_node = FunctionNode(func=request_human_approval)
 record_outcome_node = FunctionNode(func=record_outcome)
 
 # ── Graph ─────────────────────────────────────────────────────────────────────
+#
+#  START
+#    └─► parse_expense
+#          └─► security_checkpoint
+#                ├─(clean)──────────────► route_expense
+#                │                          ├─(auto_approve)─► auto_approve ──────────────────┐
+#                │                          └─(llm_review)──► risk_reviewer                    │
+#                │                                              └─► request_human_approval ──┐  │
+#                └─(injection_detected)─► request_security_review ────────────────────────┐ │  │
+#                                                                                          ▼ ▼  ▼
+#                                                                                      record_outcome
 
 root_agent = Workflow(
     name="expense_approval",
@@ -192,21 +278,29 @@ root_agent = Workflow(
     ),
     input_schema=RawEvent,
     edges=[
-        # ① ingest
+        # ① ingest → security gate
         Edge(from_node=START, to_node=parse_expense_node),
-        Edge(from_node=parse_expense_node, to_node=route_expense_node),
-        # ② fast path — no LLM, no human
+        Edge(from_node=parse_expense_node, to_node=security_checkpoint_node),
+        # ② security checkpoint branches
+        Edge(from_node=security_checkpoint_node, to_node=route_expense_node, route="clean"),
+        Edge(
+            from_node=security_checkpoint_node,
+            to_node=request_security_review_node,
+            route="injection_detected",
+        ),
+        # ③ fast path — no LLM, no human
         Edge(
             from_node=route_expense_node,
             to_node=auto_approve_node,
             route="auto_approve",
         ),
-        # ③ slow path — LLM review, then human gate
+        # ④ slow path — LLM review, then human gate
         Edge(from_node=route_expense_node, to_node=risk_reviewer, route="llm_review"),
         Edge(from_node=risk_reviewer, to_node=request_human_approval_node),
-        # ④ both paths converge here
+        # ⑤ all paths converge at record_outcome
         Edge(from_node=auto_approve_node, to_node=record_outcome_node),
         Edge(from_node=request_human_approval_node, to_node=record_outcome_node),
+        Edge(from_node=request_security_review_node, to_node=record_outcome_node),
     ],
 )
 
