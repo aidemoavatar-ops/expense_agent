@@ -29,6 +29,96 @@ Run `uv run pytest tests/unit tests/integration`. Fix issues until all tests pas
 ### Phase 6: Production Deployment
 Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline with `agents-cli infra cicd`).
 
+## Project Structure
+
+Agent code lives in `expense_agent/` (not `app/`). `app/agent.py` re-exports
+from `expense_agent.agent` so the scaffold entry point still works.
+
+```
+expense_agent/
+  __init__.py   # from . import agent as agent  ← explicit re-export required by ruff
+  config.py     # Config dataclass: model, auto_approve_threshold
+  agent.py      # Workflow graph + App
+```
+
+## ADK 2.0 Workflow — Gotchas
+
+### Edge syntax
+The cheatsheet 3-tuple `(source, target, "route")` is **not accepted** by the
+ADK 2.0 Pydantic schema. Always use explicit objects:
+
+```python
+from google.adk.workflow import Edge, FunctionNode, START
+
+my_node = FunctionNode(func=my_func)       # wrap every plain function
+Edge(from_node=START, to_node=my_node)     # unconditional
+Edge(from_node=a_node, to_node=b_node, route="my_route")  # conditional
+```
+
+`LlmAgent` is already a `BaseNode` and can be used in `Edge` directly.
+
+### App name must match the directory
+`get_fast_api_app(agents_dir=...)` derives the runner app name from the
+**directory** that contains `agent.py`. Set `App(name="app")` — not
+`"expense_approval_app"` or any other string — or the session service
+will fail to locate sessions with a `SessionNotFoundError`.
+
+### `Event.output` is not auto-serialized
+`Event(output=my_pydantic_model)` stores the model instance as-is.
+Serialization to dict happens only when the session store persists it.
+In unit tests, access fields via attribute (`event.output.amount`), not
+subscript (`event.output["amount"]`).
+
+### Routing and state on Event
+```python
+Event(output=value, route="my_route", state={"key": val})
+# Readable in tests as:
+event.actions.route          # → "my_route"
+event.actions.state_delta    # → {"key": val}
+```
+
+### HITL (RequestInput)
+With the default `rerun_on_resume=False` on `FunctionNode`, yield one
+`RequestInput` and return. The human's reply text becomes the node's
+output automatically — the function body does **not** re-execute.
+
+## Tests and Evals
+
+### Integration tests: input format
+When `input_schema=RawEvent` is set on the Workflow, every test message
+must be a JSON string matching `RawEvent`. Use the auto-approve path
+(amount < $100) in tests to avoid LLM credentials:
+
+```python
+expense = json.dumps({"amount": 42.50, "submitter": "alice",
+                      "category": "Meals", "description": "...", "date": "..."})
+message_text = json.dumps({"data": expense})
+types.Content(role="user", parts=[types.Part.from_text(text=message_text)])
+```
+
+### Eval grading
+The `custom_response_quality` LLM-as-judge metric requires the
+**Vertex AI Agent Platform API** to be enabled on the GCP project.
+The default metric (`agent_turn_count`) is a pure-Python function
+and works without any API calls. To use the LLM grader:
+```bash
+agents-cli eval grade --metrics custom_response_quality
+```
+
+## Lint Rules
+
+### `ty` false positives on ADK kwargs
+`ty` cannot resolve keyword arguments on ADK Pydantic classes
+(`Event.route`, `Event.state`, `ResumabilityConfig.resumability`).
+Suppressed in `pyproject.toml` under `[tool.ty.rules]`:
+```toml
+unknown-argument = "ignore"
+```
+
+### `__init__.py` re-exports
+Use `from . import agent as agent` (not `from . import agent`) to
+satisfy ruff F401 for intentional re-exports.
+
 ## Development Commands
 
 | Command | Purpose |
