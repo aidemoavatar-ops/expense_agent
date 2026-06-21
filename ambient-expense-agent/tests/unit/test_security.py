@@ -1,5 +1,6 @@
+from typing import ClassVar
+
 import pytest
-from unittest.mock import MagicMock
 
 from expense_agent.agent import ExpenseReport, security_checkpoint
 from expense_agent.security import detect_prompt_injection, scrub_pii
@@ -43,7 +44,7 @@ class TestScrubPii:
         assert cats == []
 
     def test_each_category_reported_once_for_multiple_matches(self):
-        text, cats = scrub_pii("123-45-6789 and also 987-65-4321")
+        _, cats = scrub_pii("123-45-6789 and also 987-65-4321")
         assert cats.count("SSN") == 1
 
     def test_17_digit_number_not_flagged_as_cc(self):
@@ -101,7 +102,7 @@ class TestDetectPromptInjection:
 
 
 class TestSecurityCheckpoint:
-    _BASE = {
+    _BASE: ClassVar[dict] = {
         "amount": 500.0,
         "submitter": "bob",
         "category": "Travel",

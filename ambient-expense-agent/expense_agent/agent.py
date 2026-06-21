@@ -282,7 +282,11 @@ root_agent = Workflow(
         Edge(from_node=START, to_node=parse_expense_node),
         Edge(from_node=parse_expense_node, to_node=security_checkpoint_node),
         # ② security checkpoint branches
-        Edge(from_node=security_checkpoint_node, to_node=route_expense_node, route="clean"),
+        Edge(
+            from_node=security_checkpoint_node,
+            to_node=route_expense_node,
+            route="clean",
+        ),
         Edge(
             from_node=security_checkpoint_node,
             to_node=request_security_review_node,
