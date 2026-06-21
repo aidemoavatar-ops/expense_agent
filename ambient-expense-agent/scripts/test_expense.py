@@ -122,7 +122,7 @@ def main() -> None:
     print()
     if hitl_interrupt_id:
         print("The workflow is paused waiting for a human decision.")
-        print(f"-> Open http://127.0.0.1:8080/dev-ui/?app=app in your browser.")
+        print("-> Open http://127.0.0.1:8080/dev-ui/?app=app in your browser.")
         print(f"-> Select user '{USER_ID}', session '{session_id}'.")
         print("-> Type 'approve' or 'reject' in the chat input and press Send.")
     else:
