@@ -1,17 +1,17 @@
 {
   "eval_cases": [
     {
-      "eval_case_id": "greeting",
+      "eval_case_id": "auto_approve_meals",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "Hello, what can you help me with?"}]
+        "parts": [{"text": "{\"data\": \"{\\\"amount\\\": 42.50, \\\"submitter\\\": \\\"alice\\\", \\\"category\\\": \\\"Meals\\\", \\\"description\\\": \\\"Team lunch\\\", \\\"date\\\": \\\"2026-06-21\\\"}\"}"}]
       }
     },
     {
-      "eval_case_id": "weather_query",
+      "eval_case_id": "auto_approve_travel",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "What's the weather like in San Francisco?"}]
+        "parts": [{"text": "{\"data\": \"{\\\"amount\\\": 25.00, \\\"submitter\\\": \\\"bob\\\", \\\"category\\\": \\\"Travel\\\", \\\"description\\\": \\\"Taxi to client site\\\", \\\"date\\\": \\\"2026-06-21\\\"}\"}"}]
       }
     }
   ]

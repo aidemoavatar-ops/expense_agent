@@ -130,6 +130,20 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
     logger.info(f"Session creation response: {session_response.json()}")
     session_id = session_response.json()["id"]
 
+    # Build a valid expense event for the auto-approve path (amount < $100, no LLM).
+    import json as _json
+
+    _expense = _json.dumps(
+        {
+            "amount": 55.00,
+            "submitter": "e2e_test_user",
+            "category": "Travel",
+            "description": "Train ticket",
+            "date": "2026-06-21",
+        }
+    )
+    _raw_event = _json.dumps({"data": _expense})
+
     # Then send chat message
     data = {
         "app_name": "app",
@@ -137,7 +151,7 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
         "session_id": session_id,
         "new_message": {
             "role": "user",
-            "parts": [{"text": "Hi!"}],
+            "parts": [{"text": _raw_event}],
         },
         "streaming": True,
     }

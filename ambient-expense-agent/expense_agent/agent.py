@@ -200,6 +200,6 @@ root_agent = Workflow(
 
 app = App(
     root_agent=root_agent,
-    name="expense_approval_app",
+    name="app",  # must match the agent directory name used by get_fast_api_app
     resumability_config=ResumabilityConfig(resumability="required"),
 )
