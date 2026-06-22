@@ -13,6 +13,7 @@ dependencies = [
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
+    "httpx>=0.27.0,<1.0.0",
 ]
 requires-python = ">=3.11,<3.14"
 
@@ -77,10 +78,11 @@ possibly-missing-attribute = "ignore"
 not-subscriptable = "ignore"
 deprecated = "ignore"
 unknown-argument = "ignore"
+call-non-callable = "ignore"
 
 [tool.codespell]
 ignore-words-list = "rouge"
-skip = "./locust_env/*,uv.lock,.venv,./frontend,**/package-lock.json"
+skip = "./locust_env/*,uv.lock,.venv,./frontend,**/package-lock.json,*.log"
 
 
 

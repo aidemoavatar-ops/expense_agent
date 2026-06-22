@@ -1,7 +1,19 @@
 import re
 
 _PII_PATTERNS: list[tuple[re.Pattern, str, str]] = [
-    # SSN in canonical dashed form: 123-45-6789
+    # SSN with keyword label: "SSN 143-00-0000", "SSN number is 14300000000",
+    # "social security number 123456789".  Catches dashed, undashed, and
+    # spaced digit strings following the label with optional "number"/"is" connectors.
+    (
+        re.compile(
+            r"(?:ssn(?:\s+number)?|social\s+security(?:\s+(?:number|no\.?|#))?)"
+            r"\s*(?:is\s*)?[:\s#]*\d[\d\s\-]{6,}",
+            re.IGNORECASE,
+        ),
+        "[SSN REDACTED]",
+        "SSN",
+    ),
+    # SSN canonical dashed form without keyword: 123-45-6789
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[SSN REDACTED]", "SSN"),
     # Credit-card: 16 digits with optional space or dash separators
     (
