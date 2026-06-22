@@ -5,7 +5,7 @@
 # On Windows run from Git Bash (where 'nohup' and '&' work as expected).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install playground stop lint test test-expense serve
+.PHONY: install playground stop lint test test-expense serve generate-traces grade
 
 ## Install project dependencies (wraps `uv sync`)
 install:
@@ -41,3 +41,13 @@ serve: stop
 ## PYTHONUTF8=1 is needed on Windows so the agent's Unicode box chars print correctly
 test-expense:
 	PYTHONUTF8=1 uv run python scripts/test_expense.py
+
+## Run all 5 eval scenarios through the agent; auto-resolves HITL pauses
+## Writes traces to artifacts/traces/generated_traces.json
+generate-traces:
+	PYTHONUTF8=1 uv run python tests/eval/generate_traces.py
+
+## Grade the generated traces with LLM-as-judge metrics (routing + security)
+## Writes results to artifacts/grade_results/ and prints a summary table
+grade:
+	agents-cli eval grade --traces artifacts/traces/generated_traces.json --config tests/eval/eval_config.yaml
